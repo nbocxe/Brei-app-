@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { parsePattern } from '../lib/parser/buildRows'
 import { TopBar } from '../components/TopBar'
 import { IconAlert, IconTrash } from '../components/icons'
 import { Banner, Button, Field } from '../components/ui'
@@ -7,6 +8,7 @@ import { navigate } from '../lib/useRoute'
 import {
   ACCENTS,
   exportProjects,
+  progressOf,
   removeProject,
   resetProgress,
   updateProject,
@@ -24,6 +26,7 @@ export function Settings({
 }) {
   const project = useProject(id)
   const [confirming, setConfirming] = useState(false)
+  const [changingSize, setChangingSize] = useState(false)
 
   if (!project) {
     return (
@@ -39,6 +42,22 @@ export function Settings({
   }
 
   const back = `#/project/${encodeURIComponent(project.id)}`
+  const canChangeSize = project.sizes !== null && project.sourcePages.length > 0
+
+  /** Een andere maat betekent andere aantallen, dus de lijst wordt opnieuw opgebouwd. */
+  const changeSize = (index: number) => {
+    if (!project.sizes) return
+    const parsed = parsePattern(project.sourcePages, { sizes: project.sizes, sizeIndex: index })
+    updateProject(project.id, (current) => ({
+      ...current,
+      sizeIndex: index,
+      rows: parsed.rows,
+      sections: parsed.sections,
+      glossary: parsed.glossary,
+      sourceText: parsed.text,
+    }))
+    setChangingSize(false)
+  }
 
   const handleExport = () => {
     const blob = new Blob([exportProjects([project.id])], { type: 'application/json' })
@@ -93,13 +112,67 @@ export function Settings({
           />
         </Field>
 
+        {canChangeSize && project.sizes ? (
+          <div className="section">
+            <div className="section__head">
+              <h2>Maat</h2>
+            </div>
+            <p className="muted">
+              Dit project is uitgeschreven voor maat{' '}
+              <strong>{project.sizes.names[project.sizeIndex]}</strong>.
+            </p>
+            {changingSize ? (
+              <Banner tone="warn" icon={<IconAlert size={18} />}>
+                <p>
+                  Bij een andere maat horen andere aantallen, dus de lijst wordt opnieuw opgebouwd
+                  en <strong>je vinkjes verdwijnen</strong>.
+                </p>
+                <div className="sizes">
+                  {project.sizes.names.map((size, index) => (
+                    <button
+                      key={size}
+                      type="button"
+                      className={`sizebtn${index === project.sizeIndex ? ' sizebtn--on' : ''}`}
+                      onClick={() => changeSize(index)}
+                    >
+                      {size}
+                    </button>
+                  ))}
+                </div>
+                <div className="row-actions">
+                  <Button variant="ghost" onClick={() => setChangingSize(false)}>
+                    Laat maar
+                  </Button>
+                </div>
+              </Banner>
+            ) : (
+              <div className="row-actions">
+                <Button onClick={() => setChangingSize(true)}>Andere maat kiezen</Button>
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {project.glossary.length > 0 ? (
+          <details className="leftovers">
+            <summary>Afkortingen uit het patroon ({project.glossary.length})</summary>
+            <dl className="glossary">
+              {project.glossary.map((entry) => (
+                <div key={entry.term}>
+                  <dt>{entry.term}</dt>
+                  <dd>{entry.meaning}</dd>
+                </div>
+              ))}
+            </dl>
+          </details>
+        ) : null}
+
         <div className="section">
           <div className="section__head">
             <h2>Voortgang</h2>
           </div>
           <p className="muted">
-            {project.rows.filter((row) => row.done).length} van {project.rows.length} toeren
-            afgevinkt.
+            {progressOf(project).done} van {progressOf(project).total} stappen afgevinkt.
           </p>
           <div className="row-actions">
             <Button onClick={() => resetProgress(project.id)}>Alle vinkjes wissen</Button>

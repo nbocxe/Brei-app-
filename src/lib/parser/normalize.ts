@@ -17,6 +17,9 @@ const REPLACEMENTS: [RegExp, string][] = [
   [/•|●|▪|■/g, '-'], // opsommingsbolletjes
 ]
 
+/** Een streep of rij underscores die een pagina opdeelt, zonder inhoud. */
+const SEPARATOR = /^[_\-–—=.·•*~]{4,}$/
+
 const PAGE_NUMBER =
   /^\s*(?:pagina|page|pag\.?|blz\.?)?\s*\d+\s*(?:\/|van|of)?\s*\d*\s*$/i
 
@@ -87,7 +90,7 @@ export function normalize(input: string | string[]): string {
   const pages = (Array.isArray(input) ? input : [input]).map(cleanLines)
   const lines = stripRunningHeaders(pages)
     .flat()
-    .filter((line) => !PAGE_NUMBER.test(line))
+    .filter((line) => !PAGE_NUMBER.test(line.trim()) && !SEPARATOR.test(line.trim()))
 
   // Zonder inspringing (geplakte tekst) valt er niets uit de opmaak af te leiden
   // en moet het op de zin zelf.

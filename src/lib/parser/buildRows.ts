@@ -67,8 +67,20 @@ type EmitOptions = {
 }
 
 const texts = {
-  nl: { castOn: 'Opzetten', plain: 'Gewoon doorbreien', step: 'Stap', note: 'Toelichting' },
-  en: { castOn: 'Cast on', plain: 'Work even', step: 'Step', note: 'Note' },
+  nl: {
+    castOn: 'Opzetten',
+    plain: 'Gewoon doorbreien',
+    step: 'Stap',
+    note: 'Toelichting',
+    repeatUntil: 'Herhalen',
+  },
+  en: {
+    castOn: 'Cast on',
+    plain: 'Work even',
+    step: 'Step',
+    note: 'Note',
+    repeatUntil: 'Repeat',
+  },
 } satisfies Record<Lang, Record<string, string>>
 
 /** Het patroon noemt het rij of toer; dat woord gebruiken we ook in de lijst. */
@@ -357,6 +369,7 @@ export function parsePattern(input: string | string[], options: ParseOptions = {
     emitRow({
       content: parseBlockContent(raw),
       kind: 'repeat-until',
+      label: t.repeatUntil,
       counter,
       note:
         'Hoe vaak dit moet hangt af van je werk. Houd het bij met de teller en ga verder ' +

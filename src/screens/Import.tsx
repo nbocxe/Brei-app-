@@ -5,12 +5,14 @@ import { IconAlert, IconCheck, IconFile } from '../components/icons'
 import { Banner, Button, Field } from '../components/ui'
 import { describePdfError, extractPdfText } from '../lib/pdf/extractText'
 import { parsePattern } from '../lib/parser/buildRows'
+import { normalize } from '../lib/parser/normalize'
+import { detectSizes, type SizeSet } from '../lib/parser/sizes'
 import { createProject, newId } from '../lib/storage/projects'
 import { navigate } from '../lib/useRoute'
 import type { Theme } from '../lib/useTheme'
 import type { ParseResult, Row } from '../lib/parser/types'
 
-type Step = 'choose' | 'paste' | 'review'
+type Step = 'choose' | 'paste' | 'size' | 'review'
 
 function emptyRow(): Row {
   return {
@@ -42,15 +44,32 @@ export function Import({ theme, onThemeChange }: { theme: Theme; onThemeChange: 
   const [error, setError] = useState<string | null>(null)
   const [pasted, setPasted] = useState('')
   const [name, setName] = useState('')
+  const [pages, setPages] = useState<string[]>([])
+  const [sizes, setSizes] = useState<SizeSet | null>(null)
+  const [sizeIndex, setSizeIndex] = useState(0)
   const [result, setResult] = useState<ParseResult | null>(null)
   const [rows, setRows] = useState<Row[]>([])
   const [dragging, setDragging] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
 
-  const applyParse = (parsed: ParseResult) => {
+  const runParse = (source: string[], found: SizeSet | null, index: number) => {
+    const parsed = parsePattern(source, { sizes: found, sizeIndex: index })
     setResult(parsed)
     setRows(parsed.rows)
     setStep('review')
+  }
+
+  /** Eerst de maat, want die bepaalt elk getal in het patroon. */
+  const start = (source: string[]) => {
+    setPages(source)
+    const found = detectSizes(normalize(source))
+    setSizes(found)
+    if (found) {
+      setSizeIndex(0)
+      setStep('size')
+      return
+    }
+    runParse(source, null, 0)
   }
 
   const handleFile = async (file: File) => {
@@ -70,7 +89,7 @@ export function Import({ theme, onThemeChange }: { theme: Theme; onThemeChange: 
         return
       }
 
-      applyParse(parsePattern(extraction.pages))
+      start(extraction.pages)
     } catch (caught) {
       setError(describePdfError(caught))
       setStep('paste')
@@ -79,17 +98,10 @@ export function Import({ theme, onThemeChange }: { theme: Theme; onThemeChange: 
     }
   }
 
-  const handlePaste = () => {
-    if (pasted.trim() === '') return
-    setError(null)
-    applyParse(parsePattern(pasted))
-  }
-
   const updateRow = (index: number, row: Row) =>
     setRows((current) => current.map((item, i) => (i === index ? row : item)))
 
-  const removeRow = (index: number) =>
-    setRows((current) => current.filter((_, i) => i !== index))
+  const removeRow = (index: number) => setRows((current) => current.filter((_, i) => i !== index))
 
   const insertAfter = (index: number) =>
     setRows((current) => [...current.slice(0, index + 1), emptyRow(), ...current.slice(index + 1)])
@@ -97,10 +109,11 @@ export function Import({ theme, onThemeChange }: { theme: Theme; onThemeChange: 
   const renumber = () =>
     setRows((current) => {
       let number = 0
+      const word = result?.lang === 'en' ? 'Row' : 'Toer'
       return current.map((row) => {
-        if (row.rowNumber === null) return row
+        if (row.kind !== 'row') return row
         number += 1
-        return { ...row, rowNumber: number, label: `${result?.lang === 'en' ? 'Row' : 'Toer'} ${number}` }
+        return { ...row, rowNumber: number, label: `${word} ${number}` }
       })
     })
 
@@ -110,21 +123,26 @@ export function Import({ theme, onThemeChange }: { theme: Theme; onThemeChange: 
       name: name.trim() || 'Naamloos project',
       rows,
       sections: result.sections,
+      glossary: result.glossary,
       lang: result.lang,
+      sizes,
+      sizeIndex,
       sourceText: result.text,
+      sourcePages: pages,
       notes: result.leftovers.join('\n'),
     })
     navigate(`#/project/${encodeURIComponent(project.id)}`)
   }
 
   const needsCheck = rows.filter((row) => row.needsCheck).length
+  const knitRows = rows.filter((row) => row.kind !== 'note').length
 
   return (
     <div className="app">
       <TopBar back="#/" theme={theme} onThemeChange={onThemeChange} title="Nieuw project" />
 
       <main className="page">
-        {step !== 'review' ? (
+        {step === 'choose' || step === 'paste' ? (
           <>
             <h1 className="screen-title">Lees je patroon in</h1>
             <p className="muted screen-intro">
@@ -191,7 +209,15 @@ export function Import({ theme, onThemeChange }: { theme: Theme; onThemeChange: 
                   />
                 </Field>
                 <div className="row-actions">
-                  <Button variant="primary" disabled={pasted.trim() === ''} onClick={handlePaste}>
+                  <Button
+                    variant="primary"
+                    disabled={pasted.trim() === ''}
+                    onClick={() => {
+                      if (pasted.trim() === '') return
+                      setError(null)
+                      start([pasted])
+                    }}
+                  >
                     Lees de tekst uit
                   </Button>
                   <Button variant="ghost" onClick={() => setStep('choose')}>
@@ -200,6 +226,41 @@ export function Import({ theme, onThemeChange }: { theme: Theme; onThemeChange: 
                 </div>
               </div>
             ) : null}
+          </>
+        ) : null}
+
+        {step === 'size' && sizes ? (
+          <>
+            <h1 className="screen-title">Welke maat brei je?</h1>
+            <p className="muted screen-intro">
+              Dit patroon geeft elk aantal per maat. Kies je maat, dan staat er overal alleen jouw
+              getal — geen haakjes meer om doorheen te lezen.
+            </p>
+
+            <div className="sizes">
+              {sizes.names.map((size, index) => (
+                <button
+                  key={size}
+                  type="button"
+                  className={`sizebtn${index === sizeIndex ? ' sizebtn--on' : ''}`}
+                  aria-pressed={index === sizeIndex}
+                  onClick={() => setSizeIndex(index)}
+                >
+                  {size}
+                </button>
+              ))}
+            </div>
+
+            <p className="muted screen-intro">Gevonden in het patroon: “{sizes.line}”.</p>
+
+            <div className="row-actions">
+              <Button variant="primary" size="lg" onClick={() => runParse(pages, sizes, sizeIndex)}>
+                Verder
+              </Button>
+              <Button variant="ghost" onClick={() => runParse(pages, null, 0)}>
+                Alle maten laten staan
+              </Button>
+            </div>
           </>
         ) : null}
 
@@ -213,7 +274,7 @@ export function Import({ theme, onThemeChange }: { theme: Theme; onThemeChange: 
 
             <div className="stats">
               <div className="stat">
-                <span className="stat__value">{rows.length}</span>
+                <span className="stat__value">{knitRows}</span>
                 <span className="stat__label">toeren gevonden</span>
               </div>
               <div className="stat">
@@ -225,6 +286,13 @@ export function Import({ theme, onThemeChange }: { theme: Theme; onThemeChange: 
                 <span className="stat__label">na te kijken</span>
               </div>
             </div>
+
+            {sizes ? (
+              <Banner>
+                Uitgeschreven voor maat <strong>{sizes.names[sizeIndex]}</strong>. De andere maten
+                zijn weggelaten; je kunt dit later in de instellingen omzetten.
+              </Banner>
+            ) : null}
 
             {result.warnings.map((warning) => (
               <Banner key={warning} tone="warn" icon={<IconAlert size={18} />}>
@@ -274,6 +342,20 @@ export function Import({ theme, onThemeChange }: { theme: Theme; onThemeChange: 
             <Button variant="secondary" onClick={() => setRows((current) => [...current, emptyRow()])}>
               Stap toevoegen
             </Button>
+
+            {result.glossary.length > 0 ? (
+              <details className="leftovers">
+                <summary>Afkortingen uit het patroon ({result.glossary.length})</summary>
+                <dl className="glossary">
+                  {result.glossary.map((entry) => (
+                    <div key={entry.term}>
+                      <dt>{entry.term}</dt>
+                      <dd>{entry.meaning}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </details>
+            ) : null}
 
             {result.leftovers.length > 0 ? (
               <details className="leftovers">

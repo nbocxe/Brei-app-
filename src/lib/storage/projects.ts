@@ -1,4 +1,5 @@
-import type { Lang, Row, Section } from '../parser/types'
+import type { GlossaryEntry, Lang, Row, Section } from '../parser/types'
+import type { SizeSet } from '../parser/sizes'
 
 export const ACCENTS = [
   'lavender',
@@ -22,8 +23,16 @@ export type Project = {
   lang: Lang
   sections: Section[]
   rows: Row[]
+  /** De afkortingen die het patroon zelf uitlegt. */
+  glossary: GlossaryEntry[]
+  /** De maten die in het patroon staan, als het patroon die geeft. */
+  sizes: SizeSet | null
+  /** Welke maat je brijt. */
+  sizeIndex: number
   /** De uitgelezen patroontekst, om op terug te kunnen vallen. */
   sourceText: string
+  /** De pagina's zoals ze uit de PDF kwamen, om bij een andere maat opnieuw te lezen. */
+  sourcePages: string[]
   /** Naalden, garen, spanning — en wat de parser niet als toer herkende. */
   notes: string
 }
@@ -75,11 +84,20 @@ function migrate(project: Project): Project {
     ...project,
     accent: ACCENTS.includes(project.accent) ? project.accent : 'lavender',
     sections: project.sections ?? [],
+    glossary: project.glossary ?? [],
+    sizes: project.sizes ?? null,
+    sizeIndex: project.sizeIndex ?? 0,
     notes: project.notes ?? '',
     sourceText: project.sourceText ?? '',
+    sourcePages: project.sourcePages ?? [],
     lang: project.lang === 'en' ? 'en' : 'nl',
     rows: (project.rows ?? []).map((row) => ({
       ...row,
+      // Projecten van vóór de regelsoorten bestonden alleen uit toeren.
+      kind: row.kind ?? 'row',
+      patternLabel: row.patternLabel ?? null,
+      sourceRef: row.sourceRef ?? null,
+      counter: row.counter ?? null,
       done: Boolean(row.done),
       note: row.note ?? '',
       needsCheck: Boolean(row.needsCheck),
@@ -140,7 +158,7 @@ export function setDoneUpTo(projectId: string, rowId: string): void {
     if (index === -1) return project
     return {
       ...project,
-      rows: project.rows.map((row, i) => ({ ...row, done: i <= index })),
+      rows: project.rows.map((row, i) => ({ ...row, done: isCheckable(row) && i <= index })),
     }
   })
 }
@@ -152,7 +170,7 @@ export function setCurrentRow(projectId: string, rowId: string): void {
     if (index === -1) return project
     return {
       ...project,
-      rows: project.rows.map((row, i) => ({ ...row, done: i < index })),
+      rows: project.rows.map((row, i) => ({ ...row, done: isCheckable(row) && i < index })),
     }
   })
 }
@@ -171,16 +189,34 @@ export function resetProgress(projectId: string): void {
   }))
 }
 
+/** Een toelichting lees je, je vinkt hem niet af. */
+export function isCheckable(row: Row): boolean {
+  return row.kind !== 'note'
+}
+
 /** De eerste toer die nog niet af is; is alles af, dan de laatste. */
 export function currentRowIndex(project: Project): number {
-  const index = project.rows.findIndex((row) => !row.done)
+  const index = project.rows.findIndex((row) => isCheckable(row) && !row.done)
   return index === -1 ? Math.max(0, project.rows.length - 1) : index
 }
 
 export function progressOf(project: Project): { done: number; total: number; ratio: number } {
-  const total = project.rows.length
-  const done = project.rows.filter((row) => row.done).length
+  const checkable = project.rows.filter(isCheckable)
+  const done = checkable.filter((row) => row.done).length
+  const total = checkable.length
   return { done, total, ratio: total === 0 ? 0 : done / total }
+}
+
+/** De stand van de teller bij een open herhaling. */
+export function setCounter(projectId: string, rowId: string, done: number): void {
+  updateProject(projectId, (project) => ({
+    ...project,
+    rows: project.rows.map((row) =>
+      row.id === rowId && row.counter
+        ? { ...row, counter: { ...row.counter, done: Math.max(0, done) } }
+        : row,
+    ),
+  }))
 }
 
 export function exportProjects(ids?: string[]): string {
@@ -226,8 +262,12 @@ export function createProject(input: {
   name: string
   rows: Row[]
   sections: Section[]
+  glossary: GlossaryEntry[]
   lang: Lang
+  sizes: SizeSet | null
+  sizeIndex: number
   sourceText: string
+  sourcePages: string[]
   notes?: string
 }): Project {
   const now = new Date().toISOString()
@@ -240,7 +280,11 @@ export function createProject(input: {
     lang: input.lang,
     sections: input.sections,
     rows: input.rows,
+    glossary: input.glossary,
+    sizes: input.sizes,
+    sizeIndex: input.sizeIndex,
     sourceText: input.sourceText,
+    sourcePages: input.sourcePages,
     notes: input.notes ?? '',
   })
 }

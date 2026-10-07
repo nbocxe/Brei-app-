@@ -1,11 +1,18 @@
 import { IconAlert, IconPlus, IconTrash } from './icons'
 import { Button, SideBadge } from './ui'
-import type { Row, Side } from '../lib/parser/types'
+import type { Row, RowKind, Side } from '../lib/parser/types'
 
 const SIDES: { value: string; label: string }[] = [
   { value: '', label: '—' },
   { value: 'GK', label: 'GK' },
   { value: 'VK', label: 'VK' },
+]
+
+const KINDS: { value: RowKind; label: string }[] = [
+  { value: 'row', label: 'Toer' },
+  { value: 'step', label: 'Stap' },
+  { value: 'note', label: 'Toelichting' },
+  { value: 'repeat-until', label: 'Open herhaling' },
 ]
 
 export function RowEditor({
@@ -21,8 +28,10 @@ export function RowEditor({
   onRemove: () => void
   onInsertAfter: () => void
 }) {
+  const isNote = row.kind === 'note'
+
   return (
-    <li className={`editrow${row.needsCheck ? ' editrow--check' : ''}`}>
+    <li className={`editrow${row.needsCheck ? ' editrow--check' : ''}${isNote ? ' editrow--note' : ''}`}>
       <div className="editrow__head">
         <span className="editrow__position">{position}</span>
         <input
@@ -31,6 +40,7 @@ export function RowEditor({
           aria-label={`Naam van stap ${position}`}
           onChange={(event) => onChange({ ...row, label: event.target.value })}
         />
+        {row.patternLabel ? <span className="editrow__source">{row.patternLabel}</span> : null}
         <SideBadge side={row.side} size="sm" />
       </div>
 
@@ -42,7 +52,26 @@ export function RowEditor({
         onChange={(event) => onChange({ ...row, instruction: event.target.value })}
       />
 
+      {row.sourceRef ? (
+        <p className="editrow__source">Het patroon zegt hier: “{row.sourceRef}”</p>
+      ) : null}
+
       <div className="editrow__fields">
+        <label className="editrow__field">
+          <span>Soort</span>
+          <select
+            className="input"
+            value={row.kind}
+            onChange={(event) => onChange({ ...row, kind: event.target.value as RowKind })}
+          >
+            {KINDS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
         <label className="editrow__field">
           <span>Steken</span>
           <input
@@ -52,6 +81,7 @@ export function RowEditor({
             min={0}
             value={row.stitches ?? ''}
             placeholder="—"
+            disabled={isNote}
             onChange={(event) => {
               const value = event.target.value
               onChange({
@@ -68,9 +98,8 @@ export function RowEditor({
           <select
             className="input"
             value={row.side ?? ''}
-            onChange={(event) =>
-              onChange({ ...row, side: (event.target.value || null) as Side })
-            }
+            disabled={isNote}
+            onChange={(event) => onChange({ ...row, side: (event.target.value || null) as Side })}
           >
             {SIDES.map((option) => (
               <option key={option.value} value={option.value}>
