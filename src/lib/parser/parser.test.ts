@@ -202,6 +202,30 @@ Toer 1: recht
     expect(result.leftovers.join(' ')).toMatch(/4 mm/)
   })
 
+  it('plakt losse regels niet aan elkaar tot één stap', () => {
+    const result = parsePattern(`
+Babytruitje in ribbelsteek
+Naalden: 4 mm
+Garen: 100 g merinowol
+Voorpand
+Zet 23 steken op.
+Toer 1: recht
+`)
+    expect(result.rows[0]).toMatchObject({ label: 'Opzetten', stitches: 23 })
+    expect(result.rows[0].instruction).toBe('Zet 23 steken op.')
+    expect(result.leftovers).toHaveLength(2)
+  })
+
+  it('ziet de titel van het patroon niet aan voor een onderdeel', () => {
+    const result = parsePattern(`
+Babytruitje in ribbelsteek
+Naalden: 4 mm
+Voorpand
+Toer 1: recht
+`)
+    expect(result.sections.map((section) => section.name)).toEqual(['Voorpand'])
+  })
+
   it('verdeelt toeren over de onderdelen van het patroon', () => {
     const result = parsePattern(`
 Voorpand

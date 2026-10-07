@@ -54,6 +54,8 @@ export function parsePattern(input: string | string[]): ParseResult {
   let sectionId: string | null = null
   let fromRepeats = 0
   let ids = 0
+  /** Een kop telt pas als onderdeel zodra er een toer onder valt. */
+  let pendingSection: Section | null = null
 
   function resolveSide(declared: Side, rowNumber: number | null): Side {
     if (!assignSides) return declared
@@ -69,6 +71,11 @@ export function parsePattern(input: string | string[]): ParseResult {
     const { content, forceDerived = false, numbered = true } = options
     const rowNumber = numbered ? (options.declaredNumber ?? nextRowNumber) : null
     if (rowNumber !== null) nextRowNumber = rowNumber + 1
+
+    if (pendingSection) {
+      sections.push(pendingSection)
+      pendingSection = null
+    }
 
     const side = resolveSide(content.side, rowNumber)
     if (side) lastSide = side
@@ -111,11 +118,13 @@ export function parsePattern(input: string | string[]): ParseResult {
     const existing = sections.find((section) => section.name === name)
     if (existing) {
       sectionId = existing.id
+      pendingSection = null
       return
     }
-    const section = { id: `s${sections.length + 1}`, name }
-    sections.push(section)
-    sectionId = section.id
+    // Komt er geen toer meer onder, dan was het de titel van het patroon en
+    // niet een onderdeel. Daarom pas vastleggen bij de eerste toer.
+    pendingSection = { id: `s${sections.length + 1}`, name }
+    sectionId = pendingSection.id
   }
 
   /** De toeren waar een herhaalinstructie naar verwijst. */

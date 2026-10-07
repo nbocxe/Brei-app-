@@ -62,21 +62,13 @@ export function segment(text: string): Block[] {
     .flatMap((line) => (isRepeatLine(line) ? [line] : line.split(INLINE_HEADER)))
     .map((line) => line.trim())
 
-  let open: { kind: 'row' | 'text'; parts: string[]; header: ReturnType<typeof parseRowHeader> } | null =
-    null
+  // Alleen een toerblok loopt door over meerdere regels; losse tekst niet, anders
+  // plakt een hele inleiding aan elkaar tot één stap.
+  let open: { parts: string[]; header: NonNullable<ReturnType<typeof parseRowHeader>> } | null = null
 
   const flush = () => {
     if (!open) return
-    const raw = open.parts.join(' ').trim()
-    if (raw === '' && !open.header) {
-      open = null
-      return
-    }
-    if (open.kind === 'row' && open.header) {
-      pushRow(blocks, open.header, raw)
-    } else if (raw !== '') {
-      blocks.push({ kind: 'text', raw })
-    }
+    pushRow(blocks, open.header, open.parts.join(' ').trim())
     open = null
   }
 
@@ -95,20 +87,21 @@ export function segment(text: string): Block[] {
     const header = parseRowHeader(line)
     if (header) {
       flush()
-      open = { kind: 'row', parts: [header.body], header }
-      continue
-    }
-
-    if (!open && headingLooksLikeSection(line)) {
-      blocks.push({ kind: 'section', name: line.replace(/[:：]$/, '').trim(), raw: line })
+      open = { parts: [header.body], header }
       continue
     }
 
     if (open) {
       open.parts.push(line)
-    } else {
-      open = { kind: 'text', parts: [line], header: null }
+      continue
     }
+
+    if (headingLooksLikeSection(line)) {
+      blocks.push({ kind: 'section', name: line.replace(/[:：]$/, '').trim(), raw: line })
+      continue
+    }
+
+    blocks.push({ kind: 'text', raw: line })
   }
   flush()
 
