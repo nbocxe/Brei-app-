@@ -270,6 +270,12 @@ export function parsePattern(input: string | string[]): ParseResult {
   const unusedSection = takePendingSection()
   if (unusedSection) leftovers.push(unusedSection.name)
 
+  // Eén onderdeel dat het hele patroon beslaat verdeelt niets: dat was de titel.
+  if (sections.length === 1 && rows.every((row) => row.sectionId === sections[0].id)) {
+    sections.length = 0
+    for (const row of rows) row.sectionId = null
+  }
+
   if (rows.length >= MAX_ROWS) {
     warnings.push(`Het patroon leverde meer dan ${MAX_ROWS} toeren op en is afgekapt.`)
   }

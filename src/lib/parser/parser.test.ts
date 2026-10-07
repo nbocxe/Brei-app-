@@ -223,14 +223,22 @@ Toer 1: recht
     expect(result.sections).toHaveLength(0)
   })
 
+  it('laat een kop vallen die het hele patroon beslaat', () => {
+    const result = parsePattern('Sjaal\nToer 1: recht\nToer 2: averecht')
+    expect(result.sections).toHaveLength(0)
+    expect(result.rows.every((row) => row.sectionId === null)).toBe(true)
+  })
+
   it('ziet de titel van het patroon niet aan voor een onderdeel', () => {
     const result = parsePattern(`
 Babytruitje in ribbelsteek
 Naalden: 4 mm
 Voorpand
 Toer 1: recht
+Mouwen
+Toer 1: recht
 `)
-    expect(result.sections.map((section) => section.name)).toEqual(['Voorpand'])
+    expect(result.sections.map((section) => section.name)).toEqual(['Voorpand', 'Mouwen'])
   })
 
   it('verdeelt toeren over de onderdelen van het patroon', () => {

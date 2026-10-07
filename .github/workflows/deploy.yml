@@ -36,7 +36,10 @@ jobs:
       - name: Typecontrole en bouwen
         run: npm run build
 
+      # Zet GitHub Pages zo nodig zelf aan, zodat er niets handmatig hoeft.
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - uses: actions/upload-pages-artifact@v3
         with:
