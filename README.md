@@ -36,4 +36,14 @@ De parser zit in `src/lib/parser/` en is opgedeeld per stap: tekst opschonen
 uitschrijven (`buildRows`). De tests in `parser.test.ts` zijn de plek om een
 patroon aan toe te voegen dat niet goed wordt gelezen.
 
-De app wordt automatisch gepubliceerd naar GitHub Pages bij elke push.
+## Publiceren
+
+De app wordt bij elke push gebouwd en naar GitHub Pages gezet. Dat werkt pas
+nadat Pages eenmalig aanstaat:
+
+1. Ga naar **Settings → Pages** in deze repository.
+2. Zet **Source** op **GitHub Actions**.
+
+Daarna verschijnt de app op `https://nbocxe.github.io/Brei-app-/`. Open die
+op je telefoon en kies **Toevoegen aan beginscherm**; vanaf dan werkt hij ook
+zonder internet.
