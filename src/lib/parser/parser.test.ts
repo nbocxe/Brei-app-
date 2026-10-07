@@ -216,6 +216,13 @@ Toer 1: recht
     expect(result.leftovers).toHaveLength(2)
   })
 
+  it('ziet een slotinstructie niet aan voor een kopje', () => {
+    const result = parsePattern('Toer 1: recht\nToer 2: averecht\nKant alle steken af.')
+    expect(result.rows).toHaveLength(3)
+    expect(result.rows[2].instruction).toBe('Kant alle steken af.')
+    expect(result.sections).toHaveLength(0)
+  })
+
   it('ziet de titel van het patroon niet aan voor een onderdeel', () => {
     const result = parsePattern(`
 Babytruitje in ribbelsteek

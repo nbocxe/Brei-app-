@@ -9,9 +9,12 @@ import type { Lang, ParseResult, Row, Section, Side } from './types'
 const MAX_RUNS = 400
 const MAX_ROWS = 3000
 
-/** Tekst die duidelijk een breihandeling beschrijft, ook zonder toernummer. */
+/**
+ * Tekst die duidelijk een breihandeling beschrijft, ook zonder toernummer.
+ * "kant ... af" staat erbij omdat het Nederlandse afkanten los geschreven wordt.
+ */
 const ACTION =
-  /\b(?:recht|averecht|brei(?:en|t)?|mva|minder(?:en)?|meerder(?:en)?|afkant(?:en)?|opzetten|zet\s+\d+|knit|purl|bind\s+off|cast\s+on|k2tog|ssk|work)\b/i
+  /\b(?:recht|averecht|brei(?:en|t)?|mva|minder(?:en)?|meerder(?:en)?|afkant(?:en)?|kant(?=[^.]*\baf\b)|opzetten|zet\s+\d+|knit|purl|bind\s+off|cast\s+(?:on|off)|k2tog|ssk|work)\b/i
 
 /** Rondbreien kent geen goede en verkeerde kant. */
 const IN_THE_ROUND = /\b(?:rondbreien|in\s+de\s+rondte|rondgebreid|in\s+the\s+round|magic\s+loop)\b/i
@@ -72,10 +75,8 @@ export function parsePattern(input: string | string[]): ParseResult {
     const rowNumber = numbered ? (options.declaredNumber ?? nextRowNumber) : null
     if (rowNumber !== null) nextRowNumber = rowNumber + 1
 
-    if (pendingSection) {
-      sections.push(pendingSection)
-      pendingSection = null
-    }
+    const opening = takePendingSection()
+    if (opening) sections.push(opening)
 
     const side = resolveSide(content.side, rowNumber)
     if (side) lastSide = side
@@ -112,6 +113,13 @@ export function parsePattern(input: string | string[]): ParseResult {
     rows.push(row)
     emitted.push({ row, content, declared: options.declaredNumber ?? null })
     return row
+  }
+
+  /** Haalt een nog niet vastgelegde kop op en maakt hem leeg. */
+  function takePendingSection(): Section | null {
+    const section = pendingSection
+    pendingSection = null
+    return section
   }
 
   function addSection(name: string) {
@@ -257,6 +265,10 @@ export function parsePattern(input: string | string[]): ParseResult {
       leftovers.push(block.raw)
     }
   }
+
+  // Een kop waar nooit een toer onder kwam gaat niet verloren.
+  const unusedSection = takePendingSection()
+  if (unusedSection) leftovers.push(unusedSection.name)
 
   if (rows.length >= MAX_ROWS) {
     warnings.push(`Het patroon leverde meer dan ${MAX_ROWS} toeren op en is afgekapt.`)

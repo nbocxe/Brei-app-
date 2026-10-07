@@ -23,8 +23,19 @@ const INLINE_HEADER =
 /** Zin binnen een toer die alsnog een herhaling is: "... Herhaal toer 1-2 nog 4 keer." */
 const TRAILING_REPEAT = /(?:^|(?<=[.;]\s))(herhaal|repeat)\b[\s\S]*$/i
 
+/** Woorden die verraden dat een regel een instructie is en geen kopje. */
+const INSTRUCTION_WORD =
+  /\b(?:recht|averecht|brei(?:en|t)?|mva|minder(?:en)?|meerder(?:en)?|afkant(?:en)?|opzetten|zet|sla|steek|steken|naald|toer|rij|knit|purl|bind|cast|work|st|sts|stitch(?:es)?|row|round)\b/i
+
+/** Een vervolgregel van dezelfde toer: begint klein, met een sterretje of met een getal. */
+function looksLikeContinuation(line: string): boolean {
+  return /^[a-z(*]/.test(line) || /^\d+\s*[a-z]/i.test(line)
+}
+
 function headingLooksLikeSection(line: string): boolean {
   if (line.length > 60 || line.length < 2) return false
+  // "Kant alle steken af" is een toer, geen onderdeel van het patroon.
+  if (INSTRUCTION_WORD.test(line)) return false
   if (/[.!?;,]$/.test(line)) return false
   if (/\d/.test(line) && !/^[A-ZÀ-Þ\s-]+$/.test(line)) return false
   const words = line.split(/\s+/)
@@ -91,10 +102,14 @@ export function segment(text: string): Block[] {
       continue
     }
 
-    if (open) {
+    // Alleen een duidelijk vervolg hoort nog bij de vorige toer. normalize heeft
+    // doorlopende zinnen al samengevoegd, dus een regel met een hoofdletter is
+    // iets nieuws — bijvoorbeeld "Kant alle steken af."
+    if (open && looksLikeContinuation(line)) {
       open.parts.push(line)
       continue
     }
+    flush()
 
     if (headingLooksLikeSection(line)) {
       blocks.push({ kind: 'section', name: line.replace(/[:：]$/, '').trim(), raw: line })
