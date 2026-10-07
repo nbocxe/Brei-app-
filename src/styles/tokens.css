@@ -1,0 +1,116 @@
+/* Ontwerptokens voor Knittinerd.
+   Licht thema volgt de referentie: gebroken wit, witte kaarten, zachte pastels.
+   Donker thema is dezelfde taal in avondlicht — breien gebeurt 's avonds. */
+
+:root {
+  /* Pastelaccenten. Per project wordt er één gekozen. */
+  --accent-lavender: #c8cdf6;
+  --accent-lime: #e7ee89;
+  --accent-lilac: #cfaae9;
+  --accent-coral: #f7b89c;
+  --accent-mint: #b6e3cd;
+  --accent-sky: #a9d8f0;
+  --accent-butter: #f6dd9a;
+  --accent-rose: #f3b9c9;
+
+  /* Tekst op pastel is altijd de donkere inkt — vandaar één contrastkleur. */
+  --accent-ink: #16151a;
+
+  --bg: #f4f3ef;
+  --bg-elevated: #ffffff;
+  --surface: #ffffff;
+  --surface-sunken: #efeee9;
+  --surface-hover: #f7f6f3;
+
+  --ink: #16151a;
+  --ink-soft: #55535e;
+  --ink-faint: #8b8995;
+  --ink-inverse: #ffffff;
+
+  --line: #e4e2dc;
+  --line-strong: #d2cfc7;
+
+  --ok: #2e7d5b;
+  --warn-bg: #fdf0d8;
+  --warn-ink: #8a5a06;
+  --warn-line: #e8cf9d;
+
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --radius-xl: 32px;
+  --radius-pill: 999px;
+
+  --shadow-sm: 0 1px 2px rgb(22 21 26 / 0.05);
+  --shadow-md: 0 4px 16px rgb(22 21 26 / 0.07);
+  --shadow-lg: 0 12px 32px rgb(22 21 26 / 0.1);
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  --font-sans: 'Inter Variable', Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    Roboto, sans-serif;
+
+  /* Minimale aanraakmaat: met breiwerk op schoot mis je kleine knoppen. */
+  --tap: 48px;
+
+  --maxw: 760px;
+}
+
+:root[data-theme='dark'] {
+  --bg: #16151a;
+  --bg-elevated: #211f27;
+  --surface: #211f27;
+  --surface-sunken: #1a1920;
+  --surface-hover: #2a2832;
+
+  --ink: #f5f4f2;
+  --ink-soft: #b4b1bd;
+  --ink-faint: #817e8c;
+  --ink-inverse: #16151a;
+
+  --line: #302e39;
+  --line-strong: #413e4c;
+
+  --ok: #6fd3a5;
+  --warn-bg: #3a2f17;
+  --warn-ink: #f0cd87;
+  --warn-line: #574726;
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-md: 0 4px 16px rgb(0 0 0 / 0.45);
+  --shadow-lg: 0 12px 32px rgb(0 0 0 / 0.55);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #16151a;
+    --bg-elevated: #211f27;
+    --surface: #211f27;
+    --surface-sunken: #1a1920;
+    --surface-hover: #2a2832;
+
+    --ink: #f5f4f2;
+    --ink-soft: #b4b1bd;
+    --ink-faint: #817e8c;
+    --ink-inverse: #16151a;
+
+    --line: #302e39;
+    --line-strong: #413e4c;
+
+    --ok: #6fd3a5;
+    --warn-bg: #3a2f17;
+    --warn-ink: #f0cd87;
+    --warn-line: #574726;
+
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-md: 0 4px 16px rgb(0 0 0 / 0.45);
+    --shadow-lg: 0 12px 32px rgb(0 0 0 / 0.55);
+  }
+}

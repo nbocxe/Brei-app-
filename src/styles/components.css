@@ -1,0 +1,220 @@
+/* ---------- knoppen ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--tap);
+  padding: 0 var(--space-5);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.08s ease;
+}
+
+.btn:active {
+  transform: scale(0.98);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn--primary {
+  background: var(--ink);
+  color: var(--ink-inverse);
+}
+.btn--primary:hover:not(:disabled) {
+  background: var(--ink-soft);
+}
+
+.btn--secondary {
+  background: var(--surface);
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+.btn--secondary:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.btn--ghost {
+  background: transparent;
+  color: var(--ink-soft);
+  padding: 0 var(--space-3);
+}
+.btn--ghost:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+
+.btn--danger {
+  background: transparent;
+  border-color: var(--line-strong);
+  color: #b3261e;
+}
+:root[data-theme='dark'] .btn--danger {
+  color: #ff9a92;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .btn--danger {
+    color: #ff9a92;
+  }
+}
+
+.btn--lg {
+  min-height: 62px;
+  padding: 0 var(--space-6);
+  font-size: 1.0625rem;
+}
+
+.btn--icon {
+  width: var(--tap);
+  padding: 0;
+}
+
+/* ---------- kant van het werk ---------- */
+
+.side {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  height: 26px;
+  padding: 0 var(--space-2);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  border: 1.5px solid var(--ink);
+  color: var(--ink);
+}
+
+/* Goede kant is gevuld en rond, verkeerde kant open en hoekig: ook zonder
+   kleur te zien is het verschil duidelijk. */
+.side--gk {
+  background: var(--ink);
+  color: var(--ink-inverse);
+  border-radius: var(--radius-pill);
+}
+.side--vk {
+  background: transparent;
+  border-radius: var(--radius-sm);
+  border-style: dashed;
+}
+.side--sm {
+  height: 22px;
+  min-width: 36px;
+  font-size: 0.6875rem;
+}
+
+/* ---------- voortgang ---------- */
+
+.progress__track {
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+  overflow: hidden;
+}
+
+.progress__fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--ink);
+  transition: width 0.3s ease;
+}
+
+.card .progress__track {
+  background: rgb(22 21 26 / 0.14);
+}
+.card .progress__fill {
+  background: var(--accent-ink);
+}
+
+/* ---------- meldingen ---------- */
+
+.banner {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+}
+
+.banner--warn {
+  background: var(--warn-bg);
+  border-color: var(--warn-line);
+  color: var(--warn-ink);
+}
+
+.banner__icon {
+  flex: none;
+  display: flex;
+  padding-top: 2px;
+}
+
+/* ---------- formulier ---------- */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.field__label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.field__hint {
+  font-size: 0.8125rem;
+  color: var(--ink-faint);
+}
+
+.input,
+.textarea {
+  width: 100%;
+  min-height: var(--tap);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.textarea {
+  min-height: 140px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.input:focus-visible,
+.textarea:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+/* ---------- lege staat ---------- */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.empty__body {
+  color: var(--ink-soft);
+  max-width: 48ch;
+}
