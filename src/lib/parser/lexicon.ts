@@ -56,12 +56,20 @@ export function detectSide(text: string): Side {
  */
 const STITCH_PATTERNS: RegExp[] = [
   // (24 st) · (24 steken) · [24 sts] · (→ 24) · (= 24)
-  /[([]\s*(?:→|->|=)?\s*(\d+)\s*(?:st\.?|sts\.?|steken|steek|stitches|stitch)?\s*[)\]]/gi,
+  /[([]\s*(?:→|->|=)?\s*(\d+)\s*(?:st\.?|sts\.?|stn\.?|steken|steek|stitches|stitch)?\s*[)\]]/gi,
   // = 24 steken · — 24 sts
-  /(?:=|→|->|[-–—])\s*(\d+)\s*(?:st\.?|sts\.?|steken|steek|stitches|stitch)\b/gi,
+  /(?:=|→|->|[-–—])\s*(\d+)\s*(?:st\.?|sts\.?|stn\.?|steken|steek|stitches|stitch)\b/gi,
   // 24 steken op de naald · 24 stitches remain
-  /(\d+)\s*(?:st\.?|sts\.?|steken|stitches)\s*(?:op\s+de\s+naald|totaal|in\s+totaal|remain(?:ing)?|on\s+the\s+needle|in\s+total)/gi,
+  /(\d+)\s*(?:st\.?|sts\.?|stn\.?|steken|stitches)\s*(?:op\s+de\s+naald|totaal|in\s+totaal|remain(?:ing)?|on\s+the\s+needle|in\s+total)/gi,
+  // Er staan nu in totaal 42 stn · tot er in totaal nog 7 stn over zijn
+  /\b(?:in\s+totaal|er\s+staan\s+nu|a\s+total\s+of)\s*(?:nog\s+)?(\d+)\s*(?:st\.?|sts\.?|stn\.?|steken|stitches)\b/gi,
 ]
+
+/**
+ * "tot de laatste 3 stn op de naald" telt af vanaf het eind van de toer en zegt
+ * niets over het totaal. Zonder deze uitzondering leest elke i-koord-toer als 3.
+ */
+const COUNTS_FROM_THE_END = /\b(?:laatste|eerste|last|first)\s+$/i
 
 export function extractStitchCount(text: string): number | null {
   let found: number | null = null
@@ -71,7 +79,11 @@ export function extractStitchCount(text: string): number | null {
       // Een los getal tussen haakjes is alleen een stekenaantal met pijl, is-teken
       // of eenheid erbij — anders is het vaak een herhaling ("(2x)").
       const whole = match[0]
-      if (!/→|->|=|st|steek|steken|stitch/i.test(whole)) continue
+      if (!/→|->|=|st|stn|steek|steken|stitch/i.test(whole)) continue
+
+      const digits = match.index + whole.indexOf(match[1])
+      if (COUNTS_FROM_THE_END.test(text.slice(Math.max(0, digits - 12), digits))) continue
+
       const value = Number(match[1])
       if (Number.isFinite(value) && value > 0 && value < 100000) found = value
     }
@@ -82,9 +94,9 @@ export function extractStitchCount(text: string): number | null {
 /** Steken en hun effect op het aantal steken op de naald. */
 const DELTA_RULES: { re: RegExp; delta: number }[] = [
   // Minderingen van twee steken tegelijk eerst, anders vangt de -1 regel ze af.
-  { re: /\b(?:k3tog|p3tog|cdd|sk2p|s2kp|3\s*samen(?:\s*breien)?)\b/gi, delta: -2 },
+  { re: /\b(?:k3tog|p3tog|cdd|sk2p|s2kp|3\s*samen(?:\s*breien)?|3rsam)\b/gi, delta: -2 },
   {
-    re: /\b(?:k2tog|p2tog|ssk|ssp|skpo|sl1\s*k1\s*psso|2\s*samen(?:\s*breien)?|samenbreien|minder(?:en|ing)?|dec(?:rease)?)\b/gi,
+    re: /\b(?:k2tog|p2tog|ssk|ssp|skpo|sl1\s*k1\s*psso|2\s*samen(?:\s*breien)?|samenbreien|2rsam|aro|minder(?:en|ing)?|dec(?:rease)?)\b/gi,
     delta: -1,
   },
   {

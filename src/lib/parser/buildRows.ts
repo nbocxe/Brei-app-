@@ -1,20 +1,52 @@
+import { GLOSSARY_HEADING, readGlossaryEntry } from './glossary'
 import { detectLanguage } from './lexicon'
 import { normalize } from './normalize'
 import { parseBlockContent, type BlockContent } from './parseBlock'
-import { extraRuns, isAmbiguousCount, parseRepeat, type RepeatSpec } from './repeats'
+import { extraRuns, isAmbiguousCount, parseRepeat, splitRepeats, type RepeatSpec } from './repeats'
 import { segment } from './segment'
-import type { Lang, ParseResult, Row, Section, Side } from './types'
+import { applySize, type SizeSet } from './sizes'
+import type {
+  Counter,
+  GlossaryEntry,
+  Lang,
+  ParseResult,
+  Row,
+  RowKind,
+  Section,
+  Side,
+} from './types'
 
 /** Grenzen tegen patronen die per ongeluk duizenden toeren zouden opleveren. */
 const MAX_RUNS = 400
 const MAX_ROWS = 3000
 
+/** Een zin die je iets opdraagt, in plaats van iets uitlegt. */
+const IMPERATIVE =
+  /^(?:zet|sla|brei(?:t|en)?|naai|hecht|kant|haal|plaats|knip|verbind|meerder|minder|herhaal|werk|maak|begin|cast|knit|purl|work|bind|sew|weave|place|slip|repeat)\b/i
+
 /**
- * Tekst die duidelijk een breihandeling beschrijft, ook zonder toernummer.
- * "kant ... af" staat erbij omdat het Nederlandse afkanten los geschreven wordt.
+ * "Naalden: 4 mm", "Stekenverhouding: 17 stn x 30 rijen" — de gegevens boven het
+ * patroon. Die horen bij de aantekeningen, niet tussen de toeren.
  */
-const ACTION =
-  /\b(?:recht|averecht|brei(?:en|t)?|mva|minder(?:en)?|meerder(?:en)?|afkant(?:en)?|kant(?=[^.]*\baf\b)|opzetten|zet\s+\d+|knit|purl|bind\s+off|cast\s+(?:on|off)|k2tog|ssk|work)\b/i
+const METADATA_LINE = /^[^:\d]{2,30}:\s/
+
+/** Tekst die over het breiwerk zelf gaat, en dus de moeite van het lezen waard is. */
+const KNITTING =
+  /\b(?:ge?brei(?:d|en|t|de)?|recht|averecht|mva|minder(?:en|ing(?:en)?)?|meerder(?:en|ing(?:en)?)?|afkant(?:en)?|opzetten|naai(?:en|t)?|genaaid|hecht(?:en)?|steek|steken|stn|rij|rijen|toer|toeren|naald|naalden|knit|purl|bind\s+off|cast\s+(?:on|off)|stitch(?:es)?|row|round|sew|seam|weave)\b/i
+
+/** "Brei zo door zoals beschreven tot er 45 stn op de naald staan." */
+const AS_DESCRIBED =
+  /\b(?:zoals\s+(?:beschreven|aangegeven|hierboven|eerder)|as\s+(?:described|established|set|before))\b/i
+const UNTIL = /\b(?:tot(?:dat)?|until)\b/i
+const UNTIL_STITCHES =
+  /\b(?:tot(?:dat)?|until)\b[^.]{0,80}?(\d+)\s*(?:st\.?|sts\.?|stn\.?|steken|stitches)/i
+
+/** "Brei als rij 2" — een verwijzing naar een eerdere rij in hetzelfde blok. */
+const CROSS_REF =
+  /^(?:brei|werk|work|knit|rep(?:eat)?)\s+(?:het\s+|de\s+)?(?:als|as|like)\s+(?:rij|toer|naald|row|round)\s*\.?\s*(\d+)\b/i
+
+/** "De volgende rij is een VK-rij." — het patroon zet je kant hiermee recht. */
+const NEXT_SIDE = /\bvolgende\s+(?:rij|toer|naald)\s+is\s+een\s+(GK|VK)\b/i
 
 /** Rondbreien kent geen goede en verkeerde kant. */
 const IN_THE_ROUND = /\b(?:rondbreien|in\s+de\s+rondte|rondgebreid|in\s+the\s+round|magic\s+loop)\b/i
@@ -23,90 +55,147 @@ type Emitted = { row: Row; content: BlockContent; declared: number | null }
 
 type EmitOptions = {
   content: BlockContent
+  kind?: RowKind
   declaredNumber?: number | null
   /** Bij herhalingen telt de app zelf door in plaats van het patroon te geloven. */
   forceDerived?: boolean
-  numbered?: boolean
   label?: string
+  patternLabel?: string | null
   needsCheck?: boolean
   note?: string
+  counter?: Counter | null
 }
 
 const texts = {
-  nl: { row: 'Toer', castOn: 'Opzetten', plain: 'Gewoon doorbreien', step: 'Stap' },
-  en: { row: 'Row', castOn: 'Cast on', plain: 'Work even', step: 'Step' },
+  nl: { castOn: 'Opzetten', plain: 'Gewoon doorbreien', step: 'Stap', note: 'Toelichting' },
+  en: { castOn: 'Cast on', plain: 'Work even', step: 'Step', note: 'Note' },
 } satisfies Record<Lang, Record<string, string>>
 
-/** Leest een breipatroon en schrijft het uit tot een lijst afvinkbare toeren. */
-export function parsePattern(input: string | string[]): ParseResult {
-  const text = normalize(input)
+/** Het patroon noemt het rij of toer; dat woord gebruiken we ook in de lijst. */
+function rowWordOf(text: string, lang: Lang): string {
+  if (lang === 'en') {
+    const rows = (text.match(/\brows?\b/gi) ?? []).length
+    const rounds = (text.match(/\brounds?\b/gi) ?? []).length
+    return rounds > rows ? 'Round' : 'Row'
+  }
+  const rij = (text.match(/\brij(?:en)?\b/gi) ?? []).length
+  const toer = (text.match(/\btoer(?:en)?\b/gi) ?? []).length
+  return rij > toer ? 'Rij' : 'Toer'
+}
+
+export type ParseOptions = {
+  /** De maten uit het patroon; weglaten laat alle maatgetallen staan. */
+  sizes?: SizeSet | null
+  /** Welke maat je breit. */
+  sizeIndex?: number
+}
+
+/**
+ * Leest een breipatroon en schrijft het uit tot een lijst afvinkbare toeren.
+ *
+ * Geef de pagina's zoals ze uit de PDF komen: het opschonen gebeurt hier, in één
+ * keer. Twee keer opschonen zou de inspringing kwijtraken waar de indeling aan
+ * af te lezen is.
+ */
+export function parsePattern(input: string | string[], options: ParseOptions = {}): ParseResult {
+  const cleaned = normalize(input)
+  const { sizes = null, sizeIndex = 0 } = options
+  const text = sizes ? applySize(cleaned, sizes, sizeIndex).text : cleaned
   const lang = detectLanguage(text)
   const t = texts[lang]
+  const rowWord = rowWordOf(text, lang)
   const assignSides = !IN_THE_ROUND.test(text)
 
   const rows: Row[] = []
   const emitted: Emitted[] = []
   const sections: Section[] = []
+  const glossary: GlossaryEntry[] = []
   const leftovers: string[] = []
   const warnings: string[] = []
 
-  let nextRowNumber = 1
   let lastSide: Side = null
+  /** Het patroon kan de kant van de volgende rij voorschrijven. */
+  let forcedSide: Side = null
   let stitches: number | null = null
   let stitchesDerived = false
   let sectionId: string | null = null
+  let pendingSection: Section | null = null
+  let insideGlossary = false
+  let globalRow = 0
   let fromRepeats = 0
   let ids = 0
-  /** Een kop telt pas als onderdeel zodra er een toer onder valt. */
-  let pendingSection: Section | null = null
 
-  function resolveSide(declared: Side, rowNumber: number | null): Side {
+  /** Vanaf welke regel het blok loopt waar verwijzingen in gezocht worden. */
+  let blockStart = 0
+  /** De rijen van het laatst beschreven blok, voor een open herhaling. */
+  let currentDefinition: BlockContent[] = []
+  let lastDefinition: BlockContent[] = []
+
+  function resolveSide(declared: Side): Side {
     if (!assignSides) return declared
     if (declared) return declared
+    if (forcedSide) return forcedSide
     if (lastSide) return lastSide === 'GK' ? 'VK' : 'GK'
-    if (rowNumber !== null) return rowNumber % 2 === 1 ? 'GK' : 'VK'
-    return null
+    return 'GK'
+  }
+
+  function takePendingSection(): Section | null {
+    const section = pendingSection
+    pendingSection = null
+    return section
   }
 
   function emitRow(options: EmitOptions): Row | null {
     if (rows.length >= MAX_ROWS) return null
 
-    const { content, forceDerived = false, numbered = true } = options
-    const rowNumber = numbered ? (options.declaredNumber ?? nextRowNumber) : null
-    if (rowNumber !== null) nextRowNumber = rowNumber + 1
-
+    const { content, kind = 'row', forceDerived = false } = options
     const opening = takePendingSection()
     if (opening) sections.push(opening)
 
-    const side = resolveSide(content.side, rowNumber)
-    if (side) lastSide = side
+    // Alleen echte toeren tellen mee voor de nummering en de kantwisseling;
+    // een toelichting ertussen mag die rij niet verschuiven.
+    const numbered = kind === 'row'
+    const rowNumber = numbered ? ++globalRow : null
 
-    if (content.castOn !== null) {
-      stitches = content.castOn
-      stitchesDerived = false
-    } else if (!forceDerived && content.stitches !== null) {
-      stitches = content.stitches
-      stitchesDerived = false
-    } else if (content.uncertainStitches) {
-      // Beter geen getal dan een getal dat stilletjes afdrijft.
-      stitches = null
-      stitchesDerived = false
-    } else if (stitches !== null && content.delta !== 0) {
-      stitches += content.delta
-      stitchesDerived = true
+    let side: Side = null
+    if (numbered) {
+      side = resolveSide(content.side)
+      if (side) lastSide = side
+      forcedSide = null
+    }
+
+    if (kind !== 'note') {
+      if (content.castOn !== null) {
+        stitches = content.castOn
+        stitchesDerived = false
+      } else if (!forceDerived && content.stitches !== null) {
+        stitches = content.stitches
+        stitchesDerived = false
+      } else if (content.uncertainStitches) {
+        // Beter geen getal dan een getal dat stilletjes afdrijft.
+        stitches = null
+        stitchesDerived = false
+      } else if (stitches !== null && content.delta !== 0) {
+        stitches += content.delta
+        stitchesDerived = true
+      }
     }
 
     const row: Row = {
       id: `r${++ids}`,
-      label: options.label ?? (rowNumber !== null ? `${t.row} ${rowNumber}` : t.step),
+      kind,
+      label: options.label ?? (rowNumber !== null ? `${rowWord} ${rowNumber}` : t.step),
+      patternLabel: options.patternLabel ?? null,
       rowNumber,
       instruction: content.instruction,
+      sourceRef: content.sourceRef,
       side,
-      stitches,
-      stitchesDerived,
+      stitches: kind === 'note' ? null : stitches,
+      stitchesDerived: kind === 'note' ? false : stitchesDerived,
       sectionId,
       needsCheck: options.needsCheck ?? false,
       note: options.note ?? '',
+      counter: options.counter ?? null,
       done: false,
     }
 
@@ -115,14 +204,18 @@ export function parsePattern(input: string | string[]): ParseResult {
     return row
   }
 
-  /** Haalt een nog niet vastgelegde kop op en maakt hem leeg. */
-  function takePendingSection(): Section | null {
-    const section = pendingSection
-    pendingSection = null
-    return section
-  }
-
   function addSection(name: string) {
+    // In de afkortingenlijst ziet elke regel eruit als een kopje ("VK verkeerde
+    // kant van het werk"). Daar is het een afkorting met uitleg.
+    if (insideGlossary) {
+      const entry = readGlossaryEntry(name, true)
+      if (entry) {
+        glossary.push(entry)
+        return
+      }
+    }
+
+    insideGlossary = GLOSSARY_HEADING.test(name)
     const existing = sections.find((section) => section.name === name)
     if (existing) {
       sectionId = existing.id
@@ -133,6 +226,27 @@ export function parsePattern(input: string | string[]): ParseResult {
     // niet een onderdeel. Daarom pas vastleggen bij de eerste toer.
     pendingSection = { id: `s${sections.length + 1}`, name }
     sectionId = pendingSection.id
+  }
+
+  /** "Brei als rij 2" invullen met wat rij 2 zegt, gezocht in hetzelfde blok. */
+  function resolveCrossRef(content: BlockContent): BlockContent {
+    const match = CROSS_REF.exec(content.instruction.trim())
+    if (!match) return content
+
+    const wanted = Number(match[1])
+    const source = emitted
+      .slice(blockStart)
+      .reverse()
+      .find((item) => item.declared === wanted)
+    if (!source) return content
+
+    return {
+      ...source.content,
+      // De rij houdt zijn eigen naam en kant; alleen de instructie komt van elders.
+      patternLabel: content.patternLabel,
+      side: content.side ?? source.content.side,
+      sourceRef: content.instruction.trim(),
+    }
   }
 
   /** De toeren waar een herhaalinstructie naar verwijst. */
@@ -158,7 +272,6 @@ export function parsePattern(input: string | string[]): ParseResult {
     return []
   }
 
-  /** Hoe vaak het blok nog gebreid wordt, als dat te bepalen is. */
   function runCount(spec: RepeatSpec, sources: BlockContent[]): number | null {
     if (spec.kind === 'unknown') return null
 
@@ -182,6 +295,7 @@ export function parsePattern(input: string | string[]): ParseResult {
     if (sources.length === 0) {
       emitRow({
         content: parseBlockContent(raw),
+        kind: 'step',
         needsCheck: true,
         note: 'Deze herhaling kon niet worden uitgeschreven. Vul zelf aan wat er gebreid wordt.',
       })
@@ -203,7 +317,6 @@ export function parsePattern(input: string | string[]): ParseResult {
       notes.push(`Uitgeschreven tot ${spec.untilStitches} steken.`)
     }
     if (spec.kind === 'interval') {
-      // Bij een interval is "3 keer" eenduidig: drie van deze toeren.
       notes.push(
         `Gelezen als: om de ${spec.every} toeren deze ene toer, met daartussen ` +
           `${spec.every - 1} toeren gewoon doorbreien.`,
@@ -219,6 +332,7 @@ export function parsePattern(input: string | string[]): ParseResult {
         const row = emitRow({
           content,
           forceDerived: true,
+          patternLabel: content.patternLabel,
           needsCheck: first && note !== '',
           note: first ? note : '',
         })
@@ -229,42 +343,110 @@ export function parsePattern(input: string | string[]): ParseResult {
     }
   }
 
+  /** "Brei zo door tot er 45 stn op de naald staan" — jij bepaalt hoe vaak. */
+  function handleRepeatUntil(raw: string) {
+    const target = UNTIL_STITCHES.exec(raw)
+    const perRepeat = lastDefinition.reduce((sum, source) => sum + source.delta, 0)
+    const counter: Counter = {
+      done: 0,
+      perRepeat,
+      from: stitches,
+      target: target ? Number(target[1]) : null,
+    }
+
+    emitRow({
+      content: parseBlockContent(raw),
+      kind: 'repeat-until',
+      counter,
+      note:
+        'Hoe vaak dit moet hangt af van je werk. Houd het bij met de teller en ga verder ' +
+        'zodra het klopt.',
+    })
+
+    // Daarna ben je op het aantal uit het patroon; de volgende toeren rekenen daarmee.
+    if (counter.target !== null) {
+      stitches = counter.target
+      stitchesDerived = true
+    }
+  }
+
+  /** Losse tekst: opdracht, uitleg, afkorting of open herhaling. */
+  function handleText(raw: string, explanatory = false) {
+    const entry = readGlossaryEntry(raw, insideGlossary)
+    if (entry) {
+      glossary.push(entry)
+      return
+    }
+
+    const content = parseBlockContent(raw)
+
+    if (content.castOn !== null) {
+      emitRow({ content, kind: 'step', label: t.castOn })
+      return
+    }
+
+    if (AS_DESCRIBED.test(raw) && UNTIL.test(raw)) {
+      handleRepeatUntil(raw)
+      return
+    }
+
+    if (IMPERATIVE.test(raw) && !explanatory) {
+      emitRow({ content, kind: 'step' })
+      return
+    }
+
+    // Geen opdracht, maar wel over het breiwerk: uitleg die je leest en niet afvinkt.
+    if (explanatory || (!METADATA_LINE.test(raw) && KNITTING.test(raw))) {
+      emitRow({ content, kind: 'note', label: t.note })
+      return
+    }
+
+    // Gegevens en kleine lettertjes horen bij de aantekeningen van het project.
+    leftovers.push(raw)
+  }
+
   for (const block of segment(text)) {
+    if (block.kind !== 'row') {
+      // Een blok rijen is afgelopen; verwijzingen zoeken voortaan in het nieuwe blok.
+      if (currentDefinition.length > 0) {
+        lastDefinition = currentDefinition
+        currentDefinition = []
+      }
+      blockStart = emitted.length
+    }
+
     if (block.kind === 'section') {
       addSection(block.name)
       continue
     }
 
     if (block.kind === 'repeat') {
-      handleRepeat(block.raw)
+      // "Brei rijen 1-4 eenmaal, brei dan rijen 3 en 4 nog 1 maal" is er twee.
+      for (const part of splitRepeats(block.raw)) handleRepeat(part)
       continue
     }
 
-    if (block.kind === 'row') {
-      const content = parseBlockContent(block.body, block.side)
-      const from = block.from ?? nextRowNumber
-      const to = Math.min(block.to ?? from, from + MAX_RUNS)
-      for (let number = from; number <= to; number++) {
-        emitRow({ content, declaredNumber: number })
-      }
+    if (block.kind === 'text') {
+      handleText(block.raw, block.explanatory === true)
+      const side = NEXT_SIDE.exec(block.raw)
+      if (side) forcedSide = side[1].toUpperCase() as Side
       continue
     }
 
-    // Losse tekst: alleen een toer als er echt gebreid wordt.
-    const content = parseBlockContent(block.raw)
-    if (content.castOn !== null) {
-      emitRow({ content, numbered: false, label: t.castOn })
-    } else if (ACTION.test(block.raw)) {
-      emitRow({
-        content,
-        numbered: false,
-        needsCheck: true,
-        note: 'Geen toernummer gevonden — klopt het dat dit een aparte stap is?',
+    const parsed = parseBlockContent(block.body, block.side)
+    const from = block.from ?? 1
+    const to = Math.min(block.to ?? from, from + MAX_RUNS)
+    for (let number = from; number <= to; number++) {
+      const content = resolveCrossRef({
+        ...parsed,
+        patternLabel: `${rowWord} ${number}${parsed.side ? ` (${parsed.side})` : ''}`,
       })
-    } else {
-      leftovers.push(block.raw)
+      currentDefinition.push(content)
+      emitRow({ content, declaredNumber: number, patternLabel: content.patternLabel })
     }
   }
+
+  if (currentDefinition.length > 0) lastDefinition = currentDefinition
 
   // Een kop waar nooit een toer onder kwam gaat niet verloren.
   const unusedSection = takePendingSection()
@@ -283,7 +465,10 @@ export function parsePattern(input: string | string[]): ParseResult {
   return {
     rows,
     sections,
+    glossary,
     lang,
+    sizes,
+    sizeIndex: sizes ? sizeIndex : 0,
     text,
     leftovers,
     warnings,

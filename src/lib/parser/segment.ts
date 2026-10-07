@@ -1,8 +1,12 @@
 import { ROW_HEADER, ROW_HEADER_SHORT, detectSide, looksLikeRowHeader } from './lexicon'
 import type { Block } from './types'
 
-/** Zinnen die een herhaling aankondigen. */
-const REPEAT_START = /^(?:herhaal|repeat|brei\s+toer|work\s+rows?)\b/i
+/**
+ * Zinnen die een herhaling aankondigen. Niet elk patroon schrijft "herhaal":
+ * PetiteKnit zegt "Brei rijen 1 en 2 in totaal 3 maal".
+ */
+const REPEAT_START =
+  /^(?:herhaal|repeat|work\s+rows?|brei\s+(?:de\s+)?(?:laatste\s+\d+\s+)?(?:toer|toeren|rij|rijen|naald|naalden)\b)/i
 
 /** "om de 4 toeren", "elke 4e toer", "every 4th row" — een herhaling met een interval. */
 const INTERVAL =
@@ -14,11 +18,12 @@ export function isRepeatLine(line: string): boolean {
 }
 
 /**
- * Een toerkop midden in een regel, herkenbaar aan het dubbelepunt of streepje
- * erachter. "Herhaal toer 1 en 2" heeft dat niet en wordt dus niet gesplitst.
+ * Een toerkop midden in een regel, herkenbaar aan de dubbele punt erachter.
+ * Een eventueel bereik hoort bij de kop, zodat het streepje in "rijen 1-4" niet
+ * voor een scheidingsteken wordt aangezien — dat knipte hele zinnen doormidden.
  */
 const INLINE_HEADER =
-  /(?<=\S)\s+(?=\b(?:toer|toeren|rij|rijen|naald|naalden|row|rows|round|rounds|rnd)\s*\.?\s*\d+\s*(?:\([^)]*\))?\s*[:–—-])/gi
+  /(?<=\S)\s+(?=\b(?:toer|toeren|rij|rijen|naald|naalden|row|rows|round|rounds|rnd)\s*\.?\s*\d+(?:\s*(?:[-–—]|t\/m|en|and|&)\s*\d+)?\s*(?:\([^)]*\))?\s*(?::|\s[-–—]\s))/gi
 
 /** Zin binnen een toer die alsnog een herhaling is: "... Herhaal toer 1-2 nog 4 keer." */
 const TRAILING_REPEAT = /(?:^|(?<=[.;]\s))(herhaal|repeat)\b[\s\S]*$/i
@@ -30,6 +35,31 @@ const INSTRUCTION_WORD =
 /** Een vervolgregel van dezelfde toer: begint klein, met een sterretje of met een getal. */
 function looksLikeContinuation(line: string): boolean {
   return /^[a-z(*]/.test(line) || /^\d+\s*[a-z]/i.test(line)
+}
+
+/** "Brei als volgt:" zegt niets; de kop eromheen soms wel. */
+const BOILERPLATE_LEAD_IN =
+  /^(?:brei|work|knit)(?:\s+nu|\s+now)?\s+(?:als\s+volgt|as\s+follows)$/i
+
+/** Een staart als ". Brei als volgt" voegt niets toe aan de kop ervoor. */
+const LEAD_IN_TAIL =
+  /[.,]?\s*(?:brei|work|knit)(?:\s+nu|\s+now)?\s+(?:als\s+volgt|as\s+follows)\s*$/i
+
+/** Boven deze lengte wordt een kop ingekort, en blijft de hele tekst als notitie staan. */
+const MAX_SECTION_NAME = 80
+
+function nextMeaningfulLine(lines: string[], from: number): string | null {
+  for (let index = from + 1; index < lines.length; index++) {
+    if (lines[index] !== '') return lines[index]
+  }
+  return null
+}
+
+function shorten(name: string): string {
+  if (name.length <= MAX_SECTION_NAME) return name
+  const cut = name.slice(0, MAX_SECTION_NAME)
+  const lastSpace = cut.lastIndexOf(' ')
+  return `${(lastSpace > 40 ? cut.slice(0, lastSpace) : cut).trim()}…`
 }
 
 function headingLooksLikeSection(line: string): boolean {
@@ -83,9 +113,21 @@ export function segment(text: string): Block[] {
     open = null
   }
 
-  for (const line of lines) {
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index]
+
     if (line === '') {
       flush()
+      continue
+    }
+
+    // Een regel die op een dubbele punt eindigt en waar de rijen direct onder
+    // staan is een kop, nooit een herhaling — ook niet als er "elke 4e rij" in
+    // staat. Die beschrijft juist het blok dat volgt.
+    const next = nextMeaningfulLine(lines, index)
+    if (line.endsWith(':') && next !== null && looksLikeRowHeader(next)) {
+      flush()
+      pushLeadIn(blocks, line)
       continue
     }
 
@@ -121,6 +163,36 @@ export function segment(text: string): Block[] {
   flush()
 
   return blocks
+}
+
+/**
+ * Verwerkt een kopregel. Staat er uitleg voor de kop in dezelfde regel, dan
+ * wordt die als losse tekst bewaard: daar staat vaak iets wat je moet weten.
+ */
+function pushLeadIn(blocks: Block[], line: string) {
+  const sentences = line.split(/(?<=[.!?])\s+/).map((part) => part.trim()).filter(Boolean)
+  const leadIn = sentences[sentences.length - 1] ?? line
+  const before = sentences.slice(0, -1).join(' ')
+
+  if (before !== '') blocks.push({ kind: 'text', raw: before, explanatory: true })
+
+  let name = leadIn.replace(/:$/, '').replace(LEAD_IN_TAIL, '').trim()
+
+  // "Brei nu meerderingen in elke rij. Brei als volgt:" — de kop zit in de zin
+  // ervoor, niet in het nietszeggende staartje.
+  if ((name === '' || BOILERPLATE_LEAD_IN.test(name)) && before !== '') {
+    const earlier = sentences[sentences.length - 2] ?? ''
+    name = earlier.replace(/[.:]$/, '').trim()
+    blocks.pop()
+    const rest = sentences.slice(0, -2).join(' ')
+    if (rest !== '') blocks.push({ kind: 'text', raw: rest, explanatory: true })
+  }
+
+  if (name === '' || BOILERPLATE_LEAD_IN.test(name)) return
+
+  // Een lange kop wordt ingekort, maar de hele zin blijft als notitie bewaard.
+  if (name.length > MAX_SECTION_NAME) blocks.push({ kind: 'text', raw: leadIn, explanatory: true })
+  blocks.push({ kind: 'section', name: shorten(name), raw: line })
 }
 
 /** Voegt een toerblok toe en haalt er een eventuele herhaalzin achteraan vanaf. */

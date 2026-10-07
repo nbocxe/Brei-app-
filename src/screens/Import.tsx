@@ -15,15 +15,19 @@ type Step = 'choose' | 'paste' | 'review'
 function emptyRow(): Row {
   return {
     id: newId(),
+    kind: 'row',
     label: 'Nieuwe stap',
+    patternLabel: null,
     rowNumber: null,
     instruction: '',
+    sourceRef: null,
     side: null,
     stitches: null,
     stitchesDerived: false,
     sectionId: null,
     needsCheck: false,
     note: '',
+    counter: null,
     done: false,
   }
 }

@@ -34,7 +34,15 @@ const INTERVAL_PATTERNS = [
 
 const TIMES = new RegExp(String.raw`(${C})\s*(?:more\s+|meer\s+)?(?:x\b|keer|maal|times?\b)`, 'i')
 const ANOTHER = new RegExp(String.raw`\b(?:nog|another)\s+(${C})\b`, 'i')
-const TOTAL = /\b(?:in\s+totaal|totaal|a\s+total\s+of|in\s+total)\b/i
+/**
+ * "in totaal 3 maal" telt de eerste keer mee. De woorden moeten wel bij het
+ * aantal keren horen: "(voor in totaal 6 rijen)" zegt iets heel anders.
+ */
+const TOTAL = new RegExp(
+  String.raw`\b(?:in\s+totaal|totaal|a\s+total\s+of|in\s+total)\s+(?:${C})\s*(?:x\b|keer|maal|times?\b)` +
+    String.raw`|\beenmaal\b|\bonce\b`,
+  'i',
+)
 const UNTIL_STITCHES =
   /\b(?:tot|totdat|until)\b[^.]{0,60}?(\d+)\s*(?:st\.?|sts\.?|steken|stitches)/i
 
@@ -45,6 +53,20 @@ function readTimes(text: string): number | null {
 function readUntilStitches(text: string): number | null {
   const value = UNTIL_STITCHES.exec(text)?.[1]
   return value ? Number(value) : null
+}
+
+/**
+ * "Brei rijen 1-4 eenmaal, brei dan rijen 3 en 4 nog 1 maal" zijn twee
+ * instructies in één zin. Die worden apart afgehandeld.
+ */
+const COMPOUND = /,\s*(?:brei\s+dan|dan|daarna|vervolgens|then|and\s+then)\s+/i
+
+export function splitRepeats(raw: string): string[] {
+  const parts = raw
+    .split(COMPOUND)
+    .map((part) => part.trim())
+    .filter((part) => part !== '')
+  return parts.length > 0 ? parts : [raw]
 }
 
 /**

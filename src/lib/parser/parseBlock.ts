@@ -3,6 +3,10 @@ import type { Side } from './types'
 
 export type BlockContent = {
   instruction: string
+  /** De oorspronkelijke verwijzing, als de instructie is ingevuld: "Brei als rij 2". */
+  sourceRef: string | null
+  /** Hoe het patroon deze rij noemt: "Rij 1 (VK)". */
+  patternLabel: string | null
   side: Side
   /** Stekenaantal dat letterlijk in het patroon staat. */
   stitches: number | null
@@ -16,11 +20,11 @@ export type BlockContent = {
 
 /** Stekenaantallen die achteraan de instructie staan horen in de eigen kolom. */
 const TRAILING_COUNT =
-  /\s*(?:[(\[]\s*(?:→|->|=)?\s*\d+\s*(?:st\.?|sts\.?|steken|steek|stitches|stitch)?\s*[)\]]|(?:=|→|->)\s*\d+\s*(?:st\.?|sts\.?|steken|steek|stitches|stitch)?)\s*[.;]?\s*$/i
+  /\s*(?:[(\[]\s*(?:→|->|=)?\s*\d+\s*(?:st\.?|sts\.?|stn\.?|steken|steek|stitches|stitch)?\s*[)\]]|(?:=|→|->)\s*\d+\s*(?:st\.?|sts\.?|stn\.?|steken|steek|stitches|stitch)?)\s*[.;]?\s*$/i
 
 const CAST_ON_PATTERNS = [
-  /\b(?:zet|sla|breit?)\s+(\d+)\s*(?:st\.?|steken)?\s*op\b/i,
-  /\b(\d+)\s*(?:st\.?|steken)\s*opzetten\b/i,
+  /\b(?:zet|sla|breit?)\s+(\d+)\s*(?:st\.?|stn\.?|steken)?\s*op\b/i,
+  /\b(\d+)\s*(?:st\.?|stn\.?|steken)\s*opzetten\b/i,
   /\bcast\s+on\s+(\d+)\b/i,
   /\bco\s+(\d+)\s*(?:st\.?|sts\.?)?\b/i,
 ]
@@ -38,7 +42,7 @@ export function detectCastOn(text: string): number | null {
 
 /** Instructies waarvan het stekenaantal niet te volgen is zonder het patroon te lezen. */
 const UNCOUNTABLE =
-  /\b(?:afkanten|bind\s+off|cast\s+off|kant\s+.{0,12}\s*af|verdeel|verdeeld|opnieuw\s+opzetten|steken\s+(?:stil|op\s+een\s+hulpdraad))\b/i
+  /\b(?:afkanten|bind\s+off|cast\s+off|kant\s+.{0,30}?\s*af|verdeel|verdeeld|opnieuw\s+opzetten|steken\s+(?:stil|op\s+een\s+hulpdraad))\b/i
 
 /** Ontleedt de tekst van één toer. */
 export function parseBlockContent(body: string, declaredSide: Side = null): BlockContent {
@@ -51,6 +55,8 @@ export function parseBlockContent(body: string, declaredSide: Side = null): Bloc
 
   return {
     instruction,
+    sourceRef: null,
+    patternLabel: null,
     side: declaredSide ?? detectSide(text),
     stitches,
     delta: estimateStitchDelta(instruction),

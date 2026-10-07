@@ -53,11 +53,26 @@ function stripRunningHeaders(pages: string[][]): string[][] {
   )
 }
 
+/** De inspringing blijft staan: die zegt of een regel het vervolg is van de vorige. */
 function cleanLines(text: string): string[] {
   let cleaned = text.normalize('NFKC')
   for (const [pattern, value] of REPLACEMENTS) cleaned = cleaned.replace(pattern, value)
-  return cleaned.split(/\r?\n/).map((line) => line.replace(/[ \t]+/g, ' ').trim())
+  return cleaned.split(/\r?\n/).map((line) => {
+    const indent = /^[ \t]*/.exec(line)?.[0].length ?? 0
+    const body = line.slice(indent).replace(/[ \t]+/g, ' ').trimEnd()
+    return body === '' ? '' : ' '.repeat(indent) + body
+  })
 }
+
+function indentOf(line: string): number {
+  return /^ */.exec(line)?.[0].length ?? 0
+}
+
+/**
+ * Vanaf de afkortingenlijst is elke regel een eigen item, hoe kort ook. Daar mag
+ * "GK goede kant van het werk" niet aan "mdv met de draad voor het werk" vastplakken.
+ */
+const GLOSSARY_HEADING = /^(?:afkortingen|afkorting|abbreviations?|legenda)$/i
 
 /** Regels die duidelijk een nieuw item beginnen mogen niet aangeplakt worden. */
 function isListStart(line: string): boolean {
@@ -74,34 +89,51 @@ export function normalize(input: string | string[]): string {
     .flat()
     .filter((line) => !PAGE_NUMBER.test(line))
 
+  // Zonder inspringing (geplakte tekst) valt er niets uit de opmaak af te leiden
+  // en moet het op de zin zelf.
+  const hasIndents = lines.some((line) => indentOf(line) > 0)
+
   const joined: string[] = []
+  /** Inspringing van de regel waar het huidige blok mee begon. */
+  let blockIndent = 0
+  let inGlossary = false
+
   for (const line of lines) {
     const previous = joined[joined.length - 1]
+    const indent = indentOf(line)
+    const body = line.trim()
 
-    if (line === '') {
+    if (body === '') {
       if (joined.length > 0 && previous !== '') joined.push('')
+      blockIndent = 0
       continue
     }
 
     // Woord dat met een koppelteken over de regel heen is afgebroken.
-    if (previous && /[a-z]-$/.test(previous) && /^[a-z]/.test(line)) {
-      joined[joined.length - 1] = previous.slice(0, -1) + line
+    if (previous && /[a-z]-$/.test(previous) && /^[a-z]/.test(body)) {
+      joined[joined.length - 1] = previous.slice(0, -1) + body
       continue
     }
 
-    // Een regel die midden in een zin ophoudt loopt door op de volgende regel.
-    if (
-      previous &&
-      previous !== '' &&
-      !/[.:;!?]$/.test(previous) &&
-      /^[a-z(]/.test(line) &&
-      !isListStart(line)
-    ) {
-      joined[joined.length - 1] = `${previous} ${line}`
+    // Een zin die midden in de regel ophoudt loopt door op de volgende regel.
+    const unfinished =
+      !/[.:;!?]$/.test(previous ?? '') && /^[a-z(]/.test(body) && !isListStart(body)
+
+    // Springt de regel verder in dan waar het blok begon, dan hoort hij sowieso
+    // bij de regel ervoor — zo worden instructie en vervolgregel weer één.
+    const hanging = hasIndents && indent > blockIndent
+
+    const continues = inGlossary ? hanging : hanging || unfinished
+
+    if (previous && previous !== '' && continues) {
+      joined[joined.length - 1] = `${previous} ${body}`
       continue
     }
 
-    joined.push(line)
+    if (GLOSSARY_HEADING.test(body)) inGlossary = true
+
+    joined.push(body)
+    blockIndent = indent
   }
 
   return joined.join('\n').replace(/\n{3,}/g, '\n\n').trim()
